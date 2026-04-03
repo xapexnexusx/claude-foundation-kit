@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "last_updated": "",
+  "session_count": 0,
+  "session_summary": "Fresh install. No sessions yet.",
+  "platform": {
+    "runtime": "Claude Code CLI",
+    "host": "",
+    "os": ""
+  },
+  "session_logs": {
+    "directory": "~/.claude-state/sessions/",
+    "protocol": "One file per day, append session headers"
+  },
+  "pending_fixes": [],
+  "shared_artifacts": {}
+}
