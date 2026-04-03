@@ -2,8 +2,11 @@
 # Claude Code Foundation Kit -- Setup Script
 # Installs skills, hooks, state files, and configures settings.json
 #
-# Usage: bash setup.sh
-# Safe to re-run -- won't overwrite existing customizations.
+# Usage:
+#   bash setup.sh           # Safe mode -- won't overwrite existing files
+#   bash setup.sh --force   # Full install -- overwrites everything
+#
+# For a fresh Claude Code install, use --force.
 
 set -euo pipefail
 
@@ -14,7 +17,17 @@ SKILLS_DIR="$CLAUDE_DIR/skills"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
-echo "=== Claude Code Foundation Kit ==="
+FORCE=false
+if [[ "${1:-}" == "--force" ]]; then
+    FORCE=true
+fi
+
+echo "=== Jarvis -- Claude Code Foundation Kit ==="
+if $FORCE; then
+    echo "Mode: FULL INSTALL (overwriting existing files)"
+else
+    echo "Mode: Safe (skipping existing files. Use --force to overwrite)"
+fi
 echo ""
 
 # --- Create directories ---
@@ -25,13 +38,13 @@ mkdir -p "$HOOKS_DIR"
 mkdir -p "$CLAUDE_DIR/projects"
 echo "  OK"
 
-# --- Install state files (don't overwrite existing) ---
+# --- Install state files ---
 echo "[2/6] Installing state files..."
 for f in system-state.json last-session.json continuation-prompt.md lessons.md decisions.md; do
     TARGET="$STATE_DIR/$f"
-    if [[ ! -f "$TARGET" ]]; then
+    if $FORCE || [[ ! -f "$TARGET" ]]; then
         cp "$SCRIPT_DIR/state/$f" "$TARGET"
-        echo "  Created: $TARGET"
+        echo "  Installed: $TARGET"
     else
         echo "  Exists (skipped): $TARGET"
     fi
@@ -43,9 +56,9 @@ for skill_dir in "$SCRIPT_DIR/skills"/*/; do
     SKILL_NAME=$(basename "$skill_dir")
     TARGET_DIR="$SKILLS_DIR/$SKILL_NAME"
     mkdir -p "$TARGET_DIR"
-    if [[ ! -f "$TARGET_DIR/skill.md" ]]; then
+    if $FORCE || [[ ! -f "$TARGET_DIR/skill.md" ]]; then
         cp "$skill_dir/skill.md" "$TARGET_DIR/skill.md"
-        echo "  Installed: /$(basename "$skill_dir")"
+        echo "  Installed: /$SKILL_NAME"
     else
         echo "  Exists (skipped): /$SKILL_NAME"
     fi
@@ -56,7 +69,7 @@ echo "[4/6] Installing hooks..."
 for hook in "$SCRIPT_DIR/hooks"/*.sh; do
     HOOK_NAME=$(basename "$hook")
     TARGET="$HOOKS_DIR/$HOOK_NAME"
-    if [[ ! -f "$TARGET" ]]; then
+    if $FORCE || [[ ! -f "$TARGET" ]]; then
         cp "$hook" "$TARGET"
         chmod +x "$TARGET"
         echo "  Installed: $HOOK_NAME"
@@ -120,29 +133,21 @@ FOUNDATION_CONFIG='{
   }
 }'
 
-if [[ ! -f "$SETTINGS" ]]; then
-    # No settings file -- create fresh
+if $FORCE || [[ ! -f "$SETTINGS" ]]; then
+    # Fresh write (or forced overwrite)
     echo "$FOUNDATION_CONFIG" | jq '.' > "$SETTINGS"
-    echo "  Created: $SETTINGS"
+    echo "  Installed: $SETTINGS"
 elif ! command -v jq &>/dev/null; then
-    # jq not available -- can't safely merge
     echo "  settings.json exists but jq is not installed. Cannot auto-merge."
-    echo "  Install jq (brew install jq) and re-run, or manually merge from:"
-    echo "  $SCRIPT_DIR/settings-snippet.json"
+    echo "  Install jq (brew install jq) and re-run, or use --force to overwrite."
 else
     # Merge into existing settings.json
-    # Back up first
     cp "$SETTINGS" "$SETTINGS.backup"
     echo "  Backed up existing settings to settings.json.backup"
 
     EXISTING=$(cat "$SETTINGS")
-
-    # Merge env vars (add ours, don't overwrite existing keys)
     MERGED=$(echo "$EXISTING" | jq --argjson new "$FOUNDATION_CONFIG" '
-      # Merge env: add new keys, keep existing values for conflicts
       .env = (($new.env // {}) + (.env // {})) |
-
-      # Merge hooks: for each event type, append our hooks if not already present
       .hooks = (
         (.hooks // {}) as $existing_hooks |
         ($new.hooks // {}) as $new_hooks |
@@ -166,14 +171,13 @@ else
     echo "  Merged hooks and env vars into existing settings.json"
 fi
 
-# --- Install CLAUDE.md (don't overwrite) ---
+# --- Install CLAUDE.md ---
 echo "[6/6] Installing CLAUDE.md..."
-if [[ ! -f "$HOME/CLAUDE.md" ]]; then
+if $FORCE || [[ ! -f "$HOME/CLAUDE.md" ]]; then
     cp "$SCRIPT_DIR/CLAUDE.md" "$HOME/CLAUDE.md"
-    echo "  Created: ~/CLAUDE.md"
+    echo "  Installed: ~/CLAUDE.md"
 else
-    echo "  ~/CLAUDE.md already exists (skipped)."
-    echo "  Kit version saved to: $SCRIPT_DIR/CLAUDE.md"
+    echo "  ~/CLAUDE.md already exists (skipped). Use --force to overwrite."
 fi
 
 echo ""
