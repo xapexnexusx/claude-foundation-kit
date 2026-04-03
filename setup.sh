@@ -67,10 +67,9 @@ done
 
 # --- Configure settings.json ---
 echo "[5/6] Configuring settings.json..."
-if [[ ! -f "$SETTINGS" ]]; then
-    # No settings file -- create one with our config
-    cat > "$SETTINGS" << 'SETTINGS_EOF'
-{
+
+# Our hooks and env config as a JSON string
+FOUNDATION_CONFIG='{
   "env": {
     "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP": "1",
@@ -119,13 +118,52 @@ if [[ ! -f "$SETTINGS" ]]; then
       }
     ]
   }
-}
-SETTINGS_EOF
+}'
+
+if [[ ! -f "$SETTINGS" ]]; then
+    # No settings file -- create fresh
+    echo "$FOUNDATION_CONFIG" | jq '.' > "$SETTINGS"
     echo "  Created: $SETTINGS"
+elif ! command -v jq &>/dev/null; then
+    # jq not available -- can't safely merge
+    echo "  settings.json exists but jq is not installed. Cannot auto-merge."
+    echo "  Install jq (brew install jq) and re-run, or manually merge from:"
+    echo "  $SCRIPT_DIR/settings-snippet.json"
 else
-    echo "  settings.json already exists."
-    echo "  Please manually merge the hooks and env vars from settings-snippet.json"
-    echo "  Reference: $SCRIPT_DIR/settings-snippet.json"
+    # Merge into existing settings.json
+    # Back up first
+    cp "$SETTINGS" "$SETTINGS.backup"
+    echo "  Backed up existing settings to settings.json.backup"
+
+    EXISTING=$(cat "$SETTINGS")
+
+    # Merge env vars (add ours, don't overwrite existing keys)
+    MERGED=$(echo "$EXISTING" | jq --argjson new "$FOUNDATION_CONFIG" '
+      # Merge env: add new keys, keep existing values for conflicts
+      .env = (($new.env // {}) + (.env // {})) |
+
+      # Merge hooks: for each event type, append our hooks if not already present
+      .hooks = (
+        (.hooks // {}) as $existing_hooks |
+        ($new.hooks // {}) as $new_hooks |
+        ($existing_hooks | keys) + ($new_hooks | keys) | unique |
+        map(. as $key | {
+          ($key): (
+            ($existing_hooks[$key] // []) +
+            ([$new_hooks[$key] // [] | .[] |
+              select(
+                . as $new_hook |
+                ($existing_hooks[$key] // []) |
+                all(.hooks[0].command != $new_hook.hooks[0].command)
+              )
+            ])
+          )
+        }) | add // {}
+      )
+    ')
+
+    echo "$MERGED" | jq '.' > "$SETTINGS"
+    echo "  Merged hooks and env vars into existing settings.json"
 fi
 
 # --- Install CLAUDE.md (don't overwrite) ---
